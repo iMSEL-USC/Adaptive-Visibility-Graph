@@ -1,2 +1,2 @@
 # Adaptive-Visibility-Graph
-we will upload the code and add necesary description after the acceptance of the paper
+we are trying to add more comments to the code. I will try to upload the code ASAP.
