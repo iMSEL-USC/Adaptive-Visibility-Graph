@@ -1,2 +1,3 @@
 # Adaptive-Visibility-Graph
-we are trying to add more comments to the code. I will try to upload the code ASAP.
+please cite the paper if you use the code.
+Ou, J., Hong, S. H., Song, G., & Wang, Y. (2023). Hybrid path planning based on adaptive visibility graph initialization and edge computing for mobile robots. Engineering Applications of Artificial Intelligence, 126, 107110.
