@@ -12,41 +12,6 @@ import math
 from numba import cuda
 from numba import jit
 from numba.cuda.random import xoroshiro128p_uniform_float32, xoroshiro128p_normal_float32
-#from numba.cuda.random import xoroshiro128p_normal_float64, xoroshiro128p_uniform_float32
-#import numba
-#import random
-
-@jit
-def points_free(obstacles, num_edge, num):
-    if num <= 0:
-        return np.zeros((0,2)).astype(np.float32)
-    points = np.random.rand(num, 2).astype(np.float32)*100
-    
-    for i in range(num):
-        c = 1
-        while c%2 == 1:
-            points[i] = np.random.rand(1, 2).astype(np.float32)*100
-            n = 0
-            for j in range(num_edge.shape[0]):
-                c = 0
-                for k in range(num_edge[j]):
-                    n1= (k+1)%num_edge[j]
-                    if points[i,0] < min(obstacles[n:n+num_edge[j],0]) or points[i,1] < min(obstacles[n:n+num_edge[j],1]) or points[i,0] > max(obstacles[n:n+num_edge[j],0]) or points[i,1] > max(obstacles[n:n+num_edge[j],1]):
-                        c = 0
-                        break
-                    A_x = obstacles[n+k, 0]
-                    A_y = obstacles[n+k, 1]
-                    B_x = obstacles[n+n1, 0]
-                    B_y = obstacles[n+n1, 1]
-                            
-                    if (((points[i,1] > A_y) != (points[i, 1] > B_y)) and ((points[i, 0]-A_x) * (B_y - A_y) * (B_y - A_y) < (B_x - A_x) * (points[i, 1] - A_y) * (B_y - A_y))):
-                                c += 1
-                if c%2 == 1:
-                    break
-                n += num_edge[j]
-    
-    return points
-
 
 
 
@@ -85,117 +50,6 @@ def population_path_free_G(new_population_out, obstacles_out, num_edge_out, rng_
         else:
             new_population_out[x,y,i] = pop_x
             new_population_out[x,y,i + 1] = pop_y
-
-
-
-@cuda.jit('(float32[:, :, :], float32[:, :], int32[:], float32[:, :, :], float32[:, :])')
-def population_path_free_S_G(new_population_out, obstacles_out, num_edge_out, random_out, pop_out):
-    x, y = cuda.grid(2)
-    for i in range(2, new_population_out.shape[2] - 2, 2):
-        c = 1
-        rx = x
-        ry = y
-        while c%2 == 1:
-            n2 = 0
-            pop_x = pop_out[x,i] + random_out[rx,ry,i]
-            pop_y = pop_out[x,i+1]+ random_out[rx,ry,i+1]
-            rx = (rx - 1)%new_population_out.shape[0]
-            ry = (ry + 1)%new_population_out.shape[1]
-            for m in range(num_edge_out.shape[0]):
-                c = 0
-                for n in range(num_edge_out[m]):
-                    n1 = (n+1)%num_edge_out[m]
-                    A_x = obstacles_out[n2+n, 0]
-                    A_y = obstacles_out[n2+n, 1]
-                    B_x = obstacles_out[n2+n1, 0]
-                    B_y = obstacles_out[n2+n1, 1]
-
-                    if (((pop_y > A_y) != (pop_y > B_y)) and (pop_x < (B_x - A_x) * (pop_y - A_y)/(B_y - A_y) + A_x)):
-                        c += 1
-                
-                if c%2 == 1:
-                    break
-                n2 += num_edge_out[m]
-        new_population_out[(x+y)%new_population_out.shape[0],y,i] = pop_x
-        new_population_out[(x+y)%new_population_out.shape[0],y,i + 1] = pop_y
-        if y == 0:
-            new_population_out[x,y,i] = pop_out[x,i]
-            new_population_out[x,y,i + 1] = pop_out[x,i+1]
-            
-
-@cuda.jit('(float32[:, :, :], float32[:, :, :])')
-def population_G(new_population_out, random_4_out):
-    x, y = cuda.grid(2)
-    for i in range(2, new_population_out.shape[2] - 2, 2):
-        new_population_out[x,y,i] = random_4_out[x, y, i]
-        new_population_out[x,y,i + 1] = random_4_out[x, y, i + 1]
-
-
-@cuda.jit#('(float32[:, :, :], float32[:, :], int32[:], float32[:, :, :])')
-def population_free_G(new_population_out, obstacles_out, num_edge_out, rng_states):
-    x, y = cuda.grid(2)
-    # Thread id in a 2D block
-    blockId = (cuda.gridDim.x * cuda.blockIdx.y) + cuda.blockIdx.x
-    threadId = (blockId * (cuda.blockDim.x * cuda.blockDim.y)) + (cuda.threadIdx.y * cuda.blockDim.x) + cuda.threadIdx.x
-    for i in range(2, new_population_out.shape[2] - 2, 2):
-        c = 1
-
-        while c%2 == 1:
-            n2 = 0
-            pop_x = xoroshiro128p_uniform_float32(rng_states, threadId) * 100
-            pop_y = xoroshiro128p_uniform_float32(rng_states, threadId) * 100
-
-            n = 0
-            for m in range(num_edge_out.shape[0]):
-                c = 0
-                for n in range(num_edge_out[m]):
-                    n1 = (n+1)%num_edge_out[m]
-                    A_x = obstacles_out[n2+n, 0]
-                    A_y = obstacles_out[n2+n, 1]
-                    B_x = obstacles_out[n2+n1, 0]
-                    B_y = obstacles_out[n2+n1, 1]
-
-                    if (((pop_y > A_y) != (pop_y > B_y)) and ((pop_x - A_x)*(B_y - A_y)*(B_y - A_y) < (B_x - A_x) * (pop_y - A_y)*(B_y - A_y))):
-                        c += 1
-                if c%2 == 1:
-                    break
-                n2 += num_edge_out[m]
-        new_population_out[x,y,i] = pop_x
-        new_population_out[x,y,i + 1] = pop_y
-
-
-@cuda.jit#('(float32[:, :, :], float32[:, :], int32[:], float32[:, :, :])')
-def popu_free_G(new_population_out, obstacles_out, num_edge_out, rng_states):
-    x, y = cuda.grid(2)
-    # Thread id in a 2D block
-    blockId = (cuda.gridDim.x * cuda.blockIdx.y) + cuda.blockIdx.x
-    threadId = (blockId * (cuda.blockDim.x * cuda.blockDim.y)) + (cuda.threadIdx.y * cuda.blockDim.x) + cuda.threadIdx.x
-    for i in range(2, new_population_out.shape[2] - 2, 2):
-        c = 1
-        k = int(xoroshiro128p_uniform_float32(rng_states, threadId)*obstacles_out.shape[0])
-        while c%2 == 1:
-            n2 = 0
-            pop_x = (obstacles_out[k,0] + xoroshiro128p_normal_float32(rng_states, threadId))%100
-            pop_y = (obstacles_out[k,1] + xoroshiro128p_normal_float32(rng_states, threadId))%100
-
-            n = 0
-            for m in range(num_edge_out.shape[0]):
-                c = 0
-                for n in range(num_edge_out[m]):
-                    n1 = (n+1)%num_edge_out[m]
-                    A_x = obstacles_out[n2+n, 0]
-                    A_y = obstacles_out[n2+n, 1]
-                    B_x = obstacles_out[n2+n1, 0]
-                    B_y = obstacles_out[n2+n1, 1]
-
-                    if (((pop_y > A_y) != (pop_y > B_y)) and ((pop_x - A_x)*(B_y - A_y)*(B_y - A_y) < (B_x - A_x) * (pop_y - A_y)*(B_y - A_y))):
-                        c += 1
-                if c%2 == 1:
-                    break
-                n2 += num_edge_out[m]
-        new_population_out[x,y,i] = pop_x
-        new_population_out[x,y,i + 1] = pop_y
-
 
 
 
@@ -358,23 +212,6 @@ def selection(new_population_out, fitness_value_out, fitness_out, parents_out):
         parents_out[x][summ][j] = new_population_out[x][y][j]
         
      
-     
-
-        
-@cuda.jit('(float32[:, :, :], float32[:], float32[:, :], int32, float32[:], int32[:])')
-def selection3(parents_out, best_individual_out, fitness_out, generation, trend_out,order):
-    # Selecting the best individuals in the current generation as parents for producing the offspring of the next generation.
-    x = cuda.grid(1)
-    summ = 0
-
-    for i in range(fitness_out.shape[0]):
-        if fitness_out[i][0] < fitness_out[x][0] or fitness_out[i][0] == fitness_out[x][0] and i < x:
-            summ += 1
-    if summ == 0:
-        trend_out[generation] = fitness_out[x][0]
-        order[0] = x
-        for i in range(parents_out.shape[2]):
-            best_individual_out[i] = parents_out[x][0][i]
 
 @cuda.jit('(float32[:, :], int32, float32[:], int32[:])')
 def selection2(fitness_out, generation, trend_out,order):
@@ -389,11 +226,6 @@ def selection2(fitness_out, generation, trend_out,order):
         trend_out[generation] = fitness_out[x][0]
         order[0] = x
             
-#@cuda.jit('(float32[:, :, :], float32[:], int32[:])')
-#def show_best(parents_out, best_individual_out, order):
-#    x = cuda.grid(1)
-#    for i in range(parents_out.shape[2]):
-#        best_individual_out[i] = parents_out[order][0][i]
 
 @cuda.jit('(float32[:, :, :], float32[:, :, :])')
 def crossover(parents_out, offspring_out):
@@ -484,69 +316,6 @@ def mutation_free(rng_states, new_population_out, obstacles_out, num_edge_out, g
                         n += num_edge_out[i]
                 new_population_out[idx][idy][x] = nx
                 new_population_out[idx][idy][y] = ny
-
-@cuda.jit#('(float32[:, :, :], float32[:, :, :], float32[:, :, :], float32[:, :], int32[:], int32)')
-def GA_mutation_free(rng_states, new_population_out, obstacles_out, num_edge_out, generation):
-    # Mutation changes a single gene in each offspring randomly.
-    idx, idy = cuda.grid(2)
-    # Thread id in a 2D block
-    blockId = (cuda.gridDim.x * cuda.blockIdx.y) + cuda.blockIdx.x
-    threadId = (blockId * (cuda.blockDim.x * cuda.blockDim.y)) + (cuda.threadIdx.y * cuda.blockDim.x) + cuda.threadIdx.x
-    temp = 30
-
-    c = 1
-    if idy >= int(0.1 * new_population_out.shape[1]):
-        for m in range(2, new_population_out.shape[2]-2):
-            if xoroshiro128p_uniform_float32(rng_states, threadId)<0.06:
-                while c%2 == 1:
-                    bx = m
-                    if bx%2 == 0:
-                        y = bx + 1
-                        x = bx
-                        nx = (new_population_out[idx][idy][x] + temp*xoroshiro128p_normal_float32(rng_states, threadId))%100
-                        ny = new_population_out[idx][idy][y]
-                    else:
-                        y = bx
-                        x = y - 1
-                        nx = new_population_out[idx][idy][x]
-                        ny = (new_population_out[idx][idy][y] + temp*xoroshiro128p_normal_float32(rng_states, threadId))%100
-                
-                    n = 0
-                    for i in range(num_edge_out.shape[0]):
-                        c = 0
-                        for j in range(num_edge_out[i]):
-                            n1 = (j+1)%num_edge_out[i]
-                            
-                            A_x = obstacles_out[n+j, 0]
-                            A_y = obstacles_out[n+j, 1]
-                            B_x = obstacles_out[n+n1, 0]
-                            B_y = obstacles_out[n+n1, 1]
-
-                            if (((ny > A_y) != (ny > B_y)) and ((nx - A_x)*(B_y - A_y)*(B_y - A_y) < (B_x - A_x) * (ny - A_y)*(B_y - A_y))):
-                                c += 1
-
-                        if c%2 == 1:
-                            break
-                        n += num_edge_out[i]
-                new_population_out[idx][idy][x] = nx
-                new_population_out[idx][idy][y] = ny        
-
-
-@cuda.jit('(float32[:, :], int32[:, :], float32[:, :, :], int32)')
-def mutation(random_normal_out, random_int_out, new_population_out, generation):
-    # Mutation changes a single gene in each offspring randomly.
-    idx, idy = cuda.grid(2)
-    #global rng_states
-    #x = idx%10
-    temp = 1
-    #if generation >300:
-    #    temp = 3
-    x = random_int_out[idx][idy]
-    random_value = random_normal_out[idx][idy] *temp
-
-    if idy >= int(0.1 * new_population_out.shape[1]) and x > 1 and x < new_population_out.shape[2] - 2:
-        new_population_out[idx][idy][x] = (new_population_out[idx][idy][x] + random_value)%100
-
 
 
 

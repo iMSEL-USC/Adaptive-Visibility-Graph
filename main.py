@@ -127,12 +127,11 @@ for generation in range(num_generations):
     GA.mutation_free[blocks_per_grid, threads_per_block](rng_states, new_population_out, obstacles_out, num_edge_out, generation)
     #migration
     GA.migration[blocks_per_grid, threads_per_block](new_population_out, parents_out, generation)
-    #time_ga = timer() - start
-    #print('Time taken for 10 is %f seconds.' % time_ga)
-    # Getting the best solution after iterating finishing all generations.
-    #At first, the fitness is calculated for each solution in the final generation.
 
+    
 
+# Getting the best solution after iterating finishing all generations.
+#At first, the fitness is calculated for each solution in the final generation.
 generation += 1
 # fitness calculation
 GA.fitness[blocks_per_grid, threads_per_block](new_population_out, obstacles_out, num_edge_out, intersection_value_out, length_out, smoothness_out, safety_out, fitness_value_out)
